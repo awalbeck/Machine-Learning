@@ -1,0 +1,112 @@
+#### Machine Learning Models - Course Project
+
+### Background
+# Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+### Analysis of Human Activity Reconition (HAR)
+#HAR has emerged as a key research area in the last years and is gaining increasing attention by the pervasive computing research community.
+#The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+### Preliminary setup
+library(caret)
+library(randomForest)
+
+setwd("c:/Users/Alan/Documents/Data Science Course (Coursera)/Machine Learning/Project")
+pmlTrain <- read.csv("pml-training.csv", na.strings = c("NA", ""), header = TRUE)
+pmlTest <- read.csv("pml-testing.csv", na.strings = c("NA", ""), header = TRUE)
+
+### Exploratory data analysis
+#head(pmlData)
+#names(pmlData)
+dim(pmlData)
+#summary(pmlData)
+summary(pmlData$classe)
+
+## Variable Reduction
+# There are currently 159 variables (not counting label) available to use for training the model. Let's pare that down a bit.
+# First remove variables with missing values
+
+ColSums <- colSums(!is.na(pmlTrain[,-ncol(pmlTrain)]))
+head(ColSums)
+sum(colSums(!is.na(pmlTrain[,-ncol(pmlTrain)]))>=0.7*nrow(pmlTrain)) 
+
+validCol <- colSums(!is.na(pmlTrain[,-ncol(pmlTrain)]))>=0.7*nrow(pmlTrain)
+pmlTrain <- pmlTrain[,validCol]
+dim(pmlTrain)
+
+#Another way to remove missing value variables
+#naVars = sapply(pmlTrain, function(x) {sum(is.na(x))})
+#table(naVars)
+#badVars = names(naVars[naVars==13460])
+#pmlTrain = pmlTrain[, !names(pmlTrain) %in% badVars]
+
+# The following transformations were used to clean the data:
+# Transformation 1: Cleaning NearZeroVariance Variables Run this code to view possible NZV Variables:
+# Look for predictors that have one or few unique values relative to # of samples
+
+myDataNZV <- nearZeroVar(pmlTrain, saveMetrics=TRUE)
+myDataNZV[myDataNZV[,"zeroVar"] > 0, ]                      # find zero variance predictors
+myDataNZV[myDataNZV[,"zeroVar"] + myDataNZV[,"nzv"] > 0, ]  # find near zero variance predictors + zero variance predictors
+
+myDataNZV <- nearZeroVar(pmlTrain)
+pmlTrain <- pmlTrain[-myDataNZV]
+dim(pmlTrain)
+
+# Remove the "ID" Variable
+pmlTrain <- pmlTrain[,-1]
+
+# number of the columns with numeric values
+sum(sapply(pmlTrain, is.numeric))
+
+# Variables with high correlation
+corrMatrix <- cor(na.omit(pmlTrain[sapply(pmlTrain, is.numeric)]))
+dim(corrMatrix)
+
+# Choose a cut-off of 90% to keep 
+highCorr <- findCorrelation(corrMatrix, cutoff = .90, verbose = T)
+
+# Final Training set 
+pmlTrain <- pmlTrain[,-highCorr]
+dim(pmlTrain)
+
+## Apply same transformation to separate test dataset
+pmlTest <- pmlTest[,validCol]
+pmlTest <- pmlTest[,-myDataNZV]
+pmlTest <- pmlTest[,-1]
+pmlTest <- pmlTest[,-highCorr]
+dim(pmlTest)
+
+### Analysis
+## Subsetting the original dataset
+# Okay, now that we've done all the transformations, now let's break up this dataset into a "train" and "test" set
+set.seed(3)
+
+inTrain <- createDataPartition(y=pmlTrain$classe, p=0.7, list=FALSE)
+training <- pmlTrain[inTrain,]
+testing <- pmlTrain[-inTrain,]
+dim(training)
+
+## Model Building and Fitting
+# Random forests build lots of bushy trees, and then average them to reduce the variance.
+# In random forests, there is no need for cross-validation or a separate test set to get an unbiased estimate of the test set error. It is estimated internally, during the execution. So, we proced with the training the model (Random Forest) with the training data set.
+
+fit <- randomForest(classe ~ .,data=training,importance=TRUE)
+fit
+
+# Alternative method for performing the training and performing model evalution, also saves the object
+#model = train(classe~., method="rf", data=training)
+#saveRDS(model, "rfmodel.RDS")
+#model = readRDS("rfmodel.RDS")
+#mean(predict(model, testing) == testing$classe) * 100
+
+# Okay, now let's look at variable importance, given the fact that the # of variables tried at each split = 7
+varImpPlot(fit)
+
+## Out of Sample Accuracy
+confusionMatrix(predict(fit,newdata=testing[,-ncol(testing)]),testing$classe)
+# Accuracy is "99.69%"
+
+## Final Prediction!
+# Finally, let's apply this same model to the separate test dataset
+predictions <- predict(fit,newdata=pmlTest)
+predictions
